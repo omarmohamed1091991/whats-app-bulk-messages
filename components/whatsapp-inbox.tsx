@@ -16,9 +16,22 @@ import {
   ArrowRight,
   ArrowDown,
   Download,
+  CheckSquare,
+  X,
+  FileSpreadsheet,
+  FileText,
 } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog"
 import useSWR from "swr"
+import * as XLSX from "xlsx"
 
 interface Conversation {
   phone_number: string
@@ -85,6 +98,11 @@ export function WhatsAppInbox() {
   const [totalConversations, setTotalConversations] = useState(0)
   const [loadedConversations, setLoadedConversations] = useState(0)
 
+  const [isSelectionMode, setIsSelectionMode] = useState(false)
+  const [selectedPhones, setSelectedPhones] = useState<Set<string>>(new Set())
+  const [showExportDialog, setShowExportDialog] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
+
   const searchRef = useRef<HTMLDivElement>(null)
   const { toast } = useToast()
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -111,7 +129,15 @@ export function WhatsAppInbox() {
     },
   )
 
-  const conversationMessages: Message[] = initialData?.messages || []
+  const { data: messagesData, mutate: mutateMessages } = useSWR(
+    selectedConversation
+      ? `/api/conversations/${encodeURIComponent(selectedConversation.phone_number)}`
+      : null,
+    fetcher,
+    { refreshInterval: 3000 },
+  )
+
+  const conversationMessages: Message[] = messagesData?.messages || []
 
   useEffect(() => {
     if (conversationMessages.length > 0 && isAtBottom) {
@@ -169,7 +195,7 @@ export function WhatsAppInbox() {
 
     setTimeout(() => scrollToBottom(), 100)
 
-    mutateConversations(
+    mutateMessages(
       async () => {
         try {
           const response = await fetch("/api/messages/reply", {
@@ -305,7 +331,7 @@ export function WhatsAppInbox() {
     const updatedViewedConversations = new Set(viewedConversations)
     let hasChanges = false
 
-    initialData.conversations.forEach((conv) => {
+    initialData.conversations.forEach((conv: Conversation) => {
       const currentUnreadCount = conv.unread_count
       const previousUnreadCount = previousUnreadCounts.get(conv.phone_number) || 0
 
@@ -402,6 +428,188 @@ export function WhatsAppInbox() {
     }
   }
 
+  const getMessageTypeLabel = (type: string | null | undefined) => {
+    switch (type) {
+      case "text":
+        return "نص"
+      case "image":
+        return "صورة"
+      case "video":
+        return "فيديو"
+      case "document":
+        return "مستند"
+      case "audio":
+        return "صوت"
+      case "voice":
+        return "رسالة صوتية"
+      case "location":
+        return "موقع"
+      case "sticker":
+        return "ملصق"
+      case "button_reply":
+      case "button":
+        return "رد سريع"
+      case "interactive":
+        return "تفاعلي"
+      case "contacts":
+        return "جهة اتصال"
+      default:
+        return type || "غير معروف"
+    }
+  }
+
+  const toggleSelectionMode = () => {
+    setIsSelectionMode((prev) => {
+      if (prev) setSelectedPhones(new Set())
+      return !prev
+    })
+  }
+
+  const togglePhoneSelection = (phone: string) => {
+    setSelectedPhones((prev) => {
+      const next = new Set(prev)
+      if (next.has(phone)) next.delete(phone)
+      else next.add(phone)
+      return next
+    })
+  }
+
+  const allDisplayedSelected =
+    displayedConversations.length > 0 &&
+    displayedConversations.every((c) => selectedPhones.has(c.phone_number))
+
+  const toggleSelectAll = () => {
+    setSelectedPhones((prev) => {
+      if (allDisplayedSelected) {
+        const next = new Set(prev)
+        displayedConversations.forEach((c) => next.delete(c.phone_number))
+        return next
+      }
+      const next = new Set(prev)
+      displayedConversations.forEach((c) => next.add(c.phone_number))
+      return next
+    })
+  }
+
+  const formatExportDateTime = (iso: string | null) => {
+    if (!iso) return ""
+    const d = new Date(iso)
+    return d.toLocaleString("ar-EG", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+  }
+
+  const fetchExportRows = async () => {
+    const phones = Array.from(selectedPhones)
+    const res = await fetch("/api/conversations/export-summary", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phones }),
+    })
+    if (!res.ok) throw new Error("فشل في جلب بيانات التصدير")
+    const data = await res.json()
+    return (data.rows || []).map((r: any) => ({
+      "الاسم": r.contact_name || "",
+      "رقم الجوال": r.phone_number || "",
+      "تاريخ ووقت آخر رسالة": formatExportDateTime(r.last_message_time),
+      "صيغة آخر رسالة مستلمة": getMessageTypeLabel(r.last_received_type),
+    }))
+  }
+
+  const exportToExcel = (rows: Record<string, string>[]) => {
+    const ws = XLSX.utils.json_to_sheet(rows, {
+      header: ["الاسم", "رقم الجوال", "تاريخ ووقت آخر رسالة", "صيغة آخر رسالة مستلمة"],
+    })
+    ws["!cols"] = [{ wch: 28 }, { wch: 18 }, { wch: 22 }, { wch: 20 }]
+    const wb = XLSX.utils.book_new()
+    wb.Workbook = { Views: [{ RTL: true }] }
+    XLSX.utils.book_append_sheet(wb, ws, "المحادثات")
+    const stamp = new Date().toISOString().slice(0, 10)
+    XLSX.writeFile(wb, `conversations-${stamp}.xlsx`)
+  }
+
+  const exportToPdf = (rows: Record<string, string>[]) => {
+    const win = window.open("", "_blank")
+    if (!win) {
+      throw new Error("تعذر فتح نافذة الطباعة، يرجى السماح بالنوافذ المنبثقة")
+    }
+    const headers = ["الاسم", "رقم الجوال", "تاريخ ووقت آخر رسالة", "صيغة آخر رسالة مستلمة"]
+    const tableRows = rows
+      .map(
+        (r) =>
+          `<tr>${headers
+            .map((h) => `<td>${String(r[h] ?? "").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</td>`)
+            .join("")}</tr>`,
+      )
+      .join("")
+    const stamp = new Date().toLocaleString("ar-EG")
+    const html = `<!doctype html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="utf-8" />
+<title>تصدير المحادثات</title>
+<style>
+  * { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; }
+  body { margin: 24px; color: #111; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .meta { color: #666; font-size: 12px; margin-bottom: 16px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { border: 1px solid #ccc; padding: 8px 10px; text-align: right; }
+  th { background: #00a884; color: #fff; }
+  tr:nth-child(even) td { background: #f5f7f8; }
+  @media print { .no-print { display: none; } }
+</style>
+</head>
+<body>
+  <h1>تقرير المحادثات</h1>
+  <div class="meta">عدد السجلات: ${rows.length} — تاريخ التصدير: ${stamp}</div>
+  <table>
+    <thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead>
+    <tbody>${tableRows}</tbody>
+  </table>
+  <script>window.onload = function () { window.print(); }</script>
+</body>
+</html>`
+    win.document.write(html)
+    win.document.close()
+  }
+
+  const handleExport = async (format: "excel" | "pdf") => {
+    if (selectedPhones.size === 0) {
+      toast({
+        title: "لم يتم التحديد",
+        description: "يرجى تحديد محادثة واحدة على الأقل للتصدير",
+        variant: "destructive",
+      })
+      return
+    }
+    setIsExporting(true)
+    try {
+      const rows = await fetchExportRows()
+      if (format === "excel") exportToExcel(rows)
+      else exportToPdf(rows)
+      toast({
+        title: "تم التصدير بنجاح",
+        description: `تم تصدير ${rows.length} محادثة بصيغة ${format === "excel" ? "Excel" : "PDF"}`,
+      })
+      setShowExportDialog(false)
+      setIsSelectionMode(false)
+      setSelectedPhones(new Set())
+    } catch (error) {
+      toast({
+        title: "خطأ",
+        description: error instanceof Error ? error.message : "فشل في التصدير",
+        variant: "destructive",
+      })
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
   const loadMoreConversations = useCallback(async () => {
     if (isLoadingMore || !hasMore) return
 
@@ -468,12 +676,47 @@ export function WhatsAppInbox() {
         className={`${showChat ? "hidden md:flex" : "flex"} w-full md:w-[380px] lg:w-[420px] bg-[#111b21] border-l border-[#2a3942] flex-col h-screen`}
       >
         <div className="bg-[#202c33] p-3 md:p-4 flex items-center justify-between flex-shrink-0">
-          <h1 className="text-white text-lg md:text-xl font-semibold">المحادثات</h1>
-          <div className="flex gap-2">
-            <Button variant="ghost" size="icon" className="text-white hover:bg-[#2a3942] h-9 w-9 md:h-10 md:w-10">
-              <MoreVertical className="h-4 w-4 md:h-5 md:w-5" />
-            </Button>
-          </div>
+          {isSelectionMode ? (
+            <>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-white hover:bg-[#2a3942] h-9 w-9"
+                  onClick={toggleSelectionMode}
+                >
+                  <X className="h-5 w-5" />
+                </Button>
+                <span className="text-white text-sm md:text-base font-medium">
+                  {selectedPhones.size > 0 ? `تم تحديد ${selectedPhones.size}` : "اختر المحادثات"}
+                </span>
+              </div>
+              <button
+                onClick={toggleSelectAll}
+                className="text-[#00a884] hover:text-[#06cf9c] text-xs md:text-sm font-medium"
+              >
+                {allDisplayedSelected ? "إلغاء تحديد الكل" : "تحديد الكل"}
+              </button>
+            </>
+          ) : (
+            <>
+              <h1 className="text-white text-lg md:text-xl font-semibold">المحادثات</h1>
+              <div className="flex gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-white hover:bg-[#2a3942] h-9 w-9 md:h-10 md:w-10"
+                  onClick={toggleSelectionMode}
+                  title="تحديد وتصدير المحادثات"
+                >
+                  <CheckSquare className="h-4 w-4 md:h-5 md:w-5" />
+                </Button>
+                <Button variant="ghost" size="icon" className="text-white hover:bg-[#2a3942] h-9 w-9 md:h-10 md:w-10">
+                  <MoreVertical className="h-4 w-4 md:h-5 md:w-5" />
+                </Button>
+              </div>
+            </>
+          )}
         </div>
 
         <div className="p-2 bg-[#111b21] relative flex-shrink-0" ref={searchRef}>
@@ -578,11 +821,25 @@ export function WhatsAppInbox() {
               {displayedConversations.map((conversation) => (
                 <div
                   key={conversation.phone_number}
-                  onClick={() => handleSelectConversation(conversation)}
+                  onClick={() =>
+                    isSelectionMode
+                      ? togglePhoneSelection(conversation.phone_number)
+                      : handleSelectConversation(conversation)
+                  }
                   className={`flex items-center gap-2 md:gap-3 p-2 md:p-3 cursor-pointer hover:bg-[#202c33] transition-colors ${
                     selectedConversation?.phone_number === conversation.phone_number ? "bg-[#2a3942]" : ""
+                  } ${
+                    isSelectionMode && selectedPhones.has(conversation.phone_number) ? "bg-[#2a3942]" : ""
                   }`}
                 >
+                  {isSelectionMode && (
+                    <Checkbox
+                      checked={selectedPhones.has(conversation.phone_number)}
+                      onCheckedChange={() => togglePhoneSelection(conversation.phone_number)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex-shrink-0 border-[#8696a0] data-[state=checked]:bg-[#00a884] data-[state=checked]:border-[#00a884]"
+                    />
+                  )}
                   <Avatar className="h-10 w-10 md:h-12 md:w-12 flex-shrink-0">
                     <AvatarFallback className="bg-[#00a884] text-white text-xs md:text-sm">
                       {getInitials(conversation.contact_name)}
@@ -630,7 +887,63 @@ export function WhatsAppInbox() {
             </div>
           )}
         </div>
+
+        {isSelectionMode && (
+          <div className="bg-[#202c33] border-t border-[#2a3942] p-3 flex items-center justify-between flex-shrink-0">
+            <span className="text-[#8696a0] text-xs md:text-sm">
+              {selectedPhones.size} محادثة محددة
+            </span>
+            <Button
+              onClick={() => setShowExportDialog(true)}
+              disabled={selectedPhones.size === 0}
+              className="bg-[#00a884] hover:bg-[#06cf9c] text-white gap-2 disabled:opacity-50"
+            >
+              <Download className="h-4 w-4" />
+              تصدير
+            </Button>
+          </div>
+        )}
       </div>
+
+      <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
+        <DialogContent className="bg-[#202c33] border-[#2a3942] text-white" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="text-white text-right">تصدير المحادثات</DialogTitle>
+            <DialogDescription className="text-[#8696a0] text-right">
+              سيتم تصدير {selectedPhones.size} محادثة في ملف واحد يحتوي على: الاسم، رقم الجوال، تاريخ ووقت آخر رسالة،
+              وصيغة آخر رسالة مستلمة.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3 pt-2">
+            <button
+              onClick={() => handleExport("excel")}
+              disabled={isExporting}
+              className="flex flex-col items-center justify-center gap-2 p-5 rounded-lg bg-[#111b21] hover:bg-[#2a3942] border border-[#2a3942] transition-colors disabled:opacity-50"
+            >
+              {isExporting ? (
+                <Loader2 className="h-8 w-8 animate-spin text-[#00a884]" />
+              ) : (
+                <FileSpreadsheet className="h-8 w-8 text-[#00a884]" />
+              )}
+              <span className="text-sm font-medium">تصدير Excel</span>
+              <span className="text-[10px] text-[#8696a0]">ملف .xlsx</span>
+            </button>
+            <button
+              onClick={() => handleExport("pdf")}
+              disabled={isExporting}
+              className="flex flex-col items-center justify-center gap-2 p-5 rounded-lg bg-[#111b21] hover:bg-[#2a3942] border border-[#2a3942] transition-colors disabled:opacity-50"
+            >
+              {isExporting ? (
+                <Loader2 className="h-8 w-8 animate-spin text-[#e74c3c]" />
+              ) : (
+                <FileText className="h-8 w-8 text-[#e74c3c]" />
+              )}
+              <span className="text-sm font-medium">تصدير PDF</span>
+              <span className="text-[10px] text-[#8696a0]">ملف .pdf</span>
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {selectedConversation ? (
         <div className={`${showChat ? "flex" : "hidden md:flex"} flex-1 flex-col h-screen`}>
