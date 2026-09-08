@@ -512,19 +512,24 @@ export function WhatsAppInbox() {
     })
     if (!res.ok) throw new Error("فشل في جلب بيانات التصدير")
     const data = await res.json()
-    return (data.rows || []).map((r: any) => ({
-      "الاسم": r.contact_name || "",
-      "رقم الجوال": r.phone_number || "",
-      "تاريخ ووقت آخر رسالة": formatExportDateTime(r.last_message_time),
-      "صيغة آخر رسالة مستلمة": getMessageTypeLabel(r.last_received_type),
-    }))
+    return (data.rows || []).map((r: any) => {
+      const text = (r.last_received_text || "").trim()
+      // نعرض نص الرسالة الفعلي؛ وإن كانت وسائط بلا نص نعرض نوعها بين قوسين
+      const lastMessage = text || (r.last_received_type ? `[${getMessageTypeLabel(r.last_received_type)}]` : "")
+      return {
+        "الاسم": r.contact_name || "",
+        "رقم الجوال": r.phone_number || "",
+        "تاريخ ووقت آخر رسالة": formatExportDateTime(r.last_message_time),
+        "نص آخر رسالة مستلمة": lastMessage,
+      }
+    })
   }
 
   const exportToExcel = (rows: Record<string, string>[]) => {
     const ws = XLSX.utils.json_to_sheet(rows, {
-      header: ["الاسم", "رقم الجوال", "تاريخ ووقت آخر رسالة", "صيغة آخر رسالة مستلمة"],
+      header: ["الاسم", "رقم الجوال", "تاريخ ووقت آخر رسالة", "نص آخر رسالة مستلمة"],
     })
-    ws["!cols"] = [{ wch: 28 }, { wch: 18 }, { wch: 22 }, { wch: 20 }]
+    ws["!cols"] = [{ wch: 28 }, { wch: 18 }, { wch: 22 }, { wch: 40 }]
     const wb = XLSX.utils.book_new()
     wb.Workbook = { Views: [{ RTL: true }] }
     XLSX.utils.book_append_sheet(wb, ws, "المحادثات")
@@ -537,7 +542,7 @@ export function WhatsAppInbox() {
     if (!win) {
       throw new Error("تعذر فتح نافذة الطباعة، يرجى السماح بالنوافذ المنبثقة")
     }
-    const headers = ["الاسم", "رقم الجوال", "تاريخ ووقت آخر رسالة", "صيغة آخر رسالة مستلمة"]
+    const headers = ["الاسم", "رقم الجوال", "تاريخ ووقت آخر رسالة", "نص آخر رسالة مستلمة"]
     const tableRows = rows
       .map(
         (r) =>
@@ -920,7 +925,7 @@ export function WhatsAppInbox() {
             <DialogTitle className="text-white text-right">تصدير المحادثات</DialogTitle>
             <DialogDescription className="text-[#8696a0] text-right">
               سيتم تصدير {selectedPhones.size} محادثة في ملف واحد يحتوي على: الاسم، رقم الجوال، تاريخ ووقت آخر رسالة،
-              وصيغة آخر رسالة مستلمة.
+              ونص آخر رسالة مستلمة.
             </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 pt-2">
