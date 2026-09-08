@@ -54,11 +54,22 @@ export function SettingsForm() {
   const { toast } = useToast()
 
   const [webhookUrl, setWebhookUrl] = useState("")
+  const [isPreviewUrl, setIsPreviewUrl] = useState(false)
 
   useEffect(() => {
     loadSettings()
     if (typeof window !== "undefined") {
-      setWebhookUrl(`${window.location.origin}/api/webhooks`)
+      const origin = window.location.origin
+      setWebhookUrl(`${origin}/api/webhooks`)
+      // نطاقات معاينة v0 (مثل .v0.build و .vusercontent.net) محمية خلف إعادة توجيه
+      // ولا يمكن لـ Meta الوصول إليها للتحقق من الـ Webhook. يجب استخدام رابط الإنتاج.
+      const host = window.location.hostname
+      setIsPreviewUrl(
+        host.endsWith(".v0.build") ||
+          host.endsWith(".vusercontent.net") ||
+          host.includes("v0.dev") ||
+          host === "localhost",
+      )
     }
   }, [])
 
@@ -290,6 +301,24 @@ export function SettingsForm() {
               استخدم هذا العنوان في إعدادات Webhook في Meta Developer Console. تأكد من أن هذا URL يمكن الوصول إليه من
               الإنترنت العام.
             </p>
+
+            {isPreviewUrl && (
+              <Alert variant="destructive" className="mt-3">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>هذا رابط معاينة ولن يعمل مع Meta</AlertTitle>
+                <AlertDescription className="text-sm space-y-1">
+                  <p>
+                    النطاق الحالي هو رابط معاينة مؤقت من v0 (محمي خلف إعادة توجيه)، ولا يستطيع Meta التحقق منه — لهذا تظهر
+                    رسالة "تعذر التحقق من صحة عنوان URL الاستدعاء".
+                  </p>
+                  <p>
+                    اضغط زر <span className="font-semibold">Publish</span> في أعلى يمين v0 لنشر التطبيق، ثم افتح رابط
+                    الإنتاج (مثل <span className="font-mono">your-app.vercel.app</span>) وانسخ عنوان الـ Callback من هناك
+                    لاستخدامه في Meta.
+                  </p>
+                </AlertDescription>
+              </Alert>
+            )}
           </div>
 
           <div className="space-y-2">
