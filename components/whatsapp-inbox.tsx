@@ -703,11 +703,20 @@ export function WhatsAppInbox() {
               <h1 className="text-white text-lg md:text-xl font-semibold">المحادثات</h1>
               <div className="flex gap-2">
                 <Button
+                  size="sm"
+                  className="bg-[#00a884] hover:bg-[#06cf9c] text-white gap-1.5 h-9 px-3"
+                  onClick={toggleSelectionMode}
+                  title="تصدير المحادثات"
+                >
+                  <Download className="h-4 w-4" />
+                  <span className="text-xs md:text-sm">تصدير</span>
+                </Button>
+                <Button
                   variant="ghost"
                   size="icon"
                   className="text-white hover:bg-[#2a3942] h-9 w-9 md:h-10 md:w-10"
                   onClick={toggleSelectionMode}
-                  title="تحديد وتصدير المحادثات"
+                  title="تحديد المحادثات"
                 >
                   <CheckSquare className="h-4 w-4 md:h-5 md:w-5" />
                 </Button>
