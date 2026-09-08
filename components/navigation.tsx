@@ -62,12 +62,12 @@ export function Navigation() {
             <Link href="/" className="flex items-center gap-2 sm:gap-3 shrink-0">
               <Image
                 src="/logo.png"
-                alt="Rose Smile Makkah"
+                alt="O-WMS"
                 width={40}
                 height={40}
-                className="h-8 w-8 sm:h-10 sm:w-10"
+                className="h-8 w-8 sm:h-10 sm:w-10 object-contain"
               />
-              <span className="text-lg sm:text-xl font-bold text-primary">Rose Smile</span>
+              <span className="text-lg sm:text-xl font-bold text-primary">O-WMS</span>
             </Link>
 
             {/* Desktop Navigation */}

@@ -9,7 +9,7 @@ import { Toaster } from "@/components/ui/toaster"
 import { Suspense } from "react"
 
 export const metadata: Metadata = {
-  title: "Rose Smile - WhatsApp Bulk Messaging",
+  title: "O-WMS - WhatsApp Bulk Messaging",
   description: "Send bulk WhatsApp messages to your customers",
   generator: "v0.app",
   viewport: "width=device-width, initial-scale=1, maximum-scale=5",
