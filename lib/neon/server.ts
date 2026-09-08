@@ -45,6 +45,15 @@ class NeonQueryBuilder implements QueryBuilder {
   }
 
   select(columns = "*", options?: { count?: string; head?: boolean }): QueryBuilder {
+    // When chained after a write operation (e.g. .insert(...).select() or
+    // .update(...).eq(...).select()), Supabase semantics mean "return the
+    // affected rows" — which we already do via RETURNING *. Do NOT downgrade
+    // the operation back to a plain SELECT, otherwise the write never runs.
+    if (this.operation === "insert" || this.operation === "update" || this.operation === "delete") {
+      this.selectColumns = columns
+      return this
+    }
+
     this.operation = "select"
     this.selectColumns = columns
     if (options?.count === "exact") {
