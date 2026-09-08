@@ -355,7 +355,7 @@ export default function DashboardPage() {
                   <p className="text-xs sm:text-sm font-medium text-muted-foreground">ردود على العملاء</p>
                   <p className="text-lg sm:text-xl md:text-2xl font-bold">{stats.messagesByType.reply}</p>
                 </div>
-                <MessageSquare className="h-6 w-6 sm:h-8 sm:w-8 text-purple-500" />
+                <MessageSquare className="h-6 w-6 sm:h-8 sm:w-8 text-accent" />
               </div>
             </div>
           </CardContent>
